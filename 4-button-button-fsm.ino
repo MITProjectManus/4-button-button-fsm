@@ -104,8 +104,17 @@ void setup() {
 
   pixels.begin(); // Init onboard NeoPixel
 
+  // Configure button interrupts
+  pinMode(BUTTON_A, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_A), buttonA, FALLING);
+
   // Set setup exit state
   State state = States::READY;
+}
+
+void buttonA() {
+  Serial.println("Button A pressed.");
+  state = States::CLOSE;
 }
 
 HTTPClient http;
@@ -115,49 +124,60 @@ const long blockDelay = 300000; // Mandatory pause of 5m between API calls to al
 const long flashInterval = 500; // Flash the LED once per second if it is flashing
 
 void loop() {
+  switch (state) {
+    case States::BOOT:
+      // For my OCD, although this state should never happen after setup()
+      break;
 
+    case States::READY:
+      // Ready for Input
+      pixels.clear();
+      pixels.setPixelColor(0, pixels.Color(0, 128, 0));
+      pixels.show();
+      break;
 
-  // Some simple test code to run through the pixel states
-  pixels.clear(); // Pixel off
-  delay(interval);
-  pixels.setPixelColor(0, pixels.Color(192, 0, 0));
-  pixels.show();
-  delay(interval*4);
+    case States::CLOSE:
+      // Status / Close Wait
+      pixels.setPixelColor(0, pixels.Color(192, 0, 0));
+      pixels.show();
+      Serial.println("CLOSE interrupt triggered. State set to CLOSE. Resetting to READY.");
+      delay(interval);
+      state = States::READY;
+      break;
 
-  pixels.clear();
-  delay(interval);
-  pixels.setPixelColor(0, pixels.Color(192, 128, 0));
-  pixels.show();
-  delay(interval*4);
+    case States::SOFTOPEN:
+      // Status / Soft Open Wait
+      break;
 
-  pixels.clear();
-  delay(interval);
-  pixels.setPixelColor(0, pixels.Color(0, 128, 0));
-  pixels.show();
-  delay(interval*4);
+    case States::OPEN:
+      // Status / Open Wait
+      break;
 
-  pixels.clear();
-  delay(interval);
-  pixels.setPixelColor(0, pixels.Color(0, 0, 255));
-  pixels.show();
-  delay(interval*4);
+    case States::CLEAR:
+      // Checkin / Clear Wait
+      break;
 
-  unsigned long currentMillis = millis();
-  if(currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
+    case States::ERROR:
+      // Button or Network Error
+      break;
+  }
 
-    http.begin(urlShopStatus);
-    http.addHeader("Content-Type", "application/json");
+  // unsigned long currentMillis = millis();
+  // if(currentMillis - previousMillis >= interval) {
+  //   previousMillis = currentMillis;
 
-    if(inuse) {
-      Serial.println("Calling Airtable web hook with status IN USE.");
+  //   http.begin(urlShopStatus);
+  //   http.addHeader("Content-Type", "application/json");
+
+  //   if(inuse) {
+  //     Serial.println("Calling Airtable web hook with status IN USE.");
       // httpCode = http.POST(TEST_INUSE);
-      inuse = false;
-    } else {
-      Serial.println("Calling Airtable web hook with status NOT IN USE.");
-      // httpCode = http.POST(TEST_NOTINUSE);
-      inuse = true;
-    }
+  //     inuse = false;
+  //   } else {
+  //     Serial.println("Calling Airtable web hook with status NOT IN USE.");
+  //     // httpCode = http.POST(TEST_NOTINUSE);
+  //     inuse = true;
+  //   }
 
     // httpCode will be negative on error
     // if (httpCode > 0) {
@@ -171,5 +191,5 @@ void loop() {
     //   Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
     // }
     // http.end();
-  }
+  // }
 }
