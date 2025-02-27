@@ -39,11 +39,6 @@ Adafruit_NeoPixel pixels(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
 const char WIFI_SSID[]     = "MIT";
 
-String CLOSE_MAKERSPACE = "{\"msSlug\":\"zauberstube\",\"status\":\"Closed\"}";
-String SOFTO_MAKERSPACE = "{\"msSlug\":\"zauberstube\",\"status\":\"Soft Open\"}";
-String OPEN_MAKERSPACE  = "{\"msSlug\":\"zauberstube\",\"status\":\"Open\"}";
-String CLEAR_MAKERSPACE = "{\"msSlug\":\"zauberstube\",\"status\":\"418\"}";
-
 // State machine states
 enum States {
   BOOT,         // Booting...
