@@ -14,39 +14,15 @@
 // Button C / GREEN / OPEN SHOP:           6
 // Button D / BLUE / CLEAR CHECKIN SCREEN: 5
 
-
 // Airtable:
-// =========
-// Endpoint: Set Makerspace Status
-// URL: 
-// Method: POST
-// Payload: {"msSlug" : "Slug", "status": "Status"}
-//
-// Reminder: the key to the left of the colon is passed literally, the value to
-// the right of the colon should be replaced with a valid slug or status value.
-//
-// Endpoint: Clear Checked-in Makers List
-// URL:
-// Method: POST
-// Payload: {"msSlug" : "Slug", "reason": "Reason Code"}
-//
-// Makerspace Slugs:
-// Metropolis = "metropolis"
-// The Deep   = "thedeep"
-// Die Zauberstube (test makerspace) = "zauberstube"
-//
-// Valid Statuses:
-// "Open" or "Closed" or "Soft Open" or "Reserved"
 // 
-// Valid Reason Codes:
-// "418"
-
-// Notes:
-// - Move most of this exaplantion to a GitHub README.md file
-// - Add a license to the code
-// - Add a README.md file
-// - Add a .gitignore file
-// - Add an 4-button-button.h file with the sensitive Airtable and WiFi info and add to .gitignore 
+// Two webhooks are set up in Airtable, one to update a makerspace's status and one to clear a makerspace's
+// checkin screen. At the moment, the web hook URL which includes a hash and requiring a record ID in the 
+// payload are the only "security features". Calls are non-destructive so this is not a significant exposure.
+// These parameters are in a required 4-button-button.h file which is NOT tracked in GitHub, but a sample
+// without the MIT record IDs and webhooks is shown in the README.
+//
+// There are several things which can cause the webhook call to fail including nonexistant statuses.
 
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -55,13 +31,13 @@
 
 Adafruit_NeoPixel pixels(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
+// Button GPIO Pins
 #define BUTTON_A  10 // RED / CLOSE
 #define BUTTON_B   9 // YELLOW / SOFT OPEN
 #define BUTTON_C   6 // GREEN / OPEN
 #define BUTTON_D   5 // BLUE / CLEAR
 
 const char WIFI_SSID[]     = "MIT";
-const char WIFI_PASSWORD[] = wifiPassword;
 
 String CLOSE_MAKERSPACE = "{\"msSlug\":\"zauberstube\",\"status\":\"Closed\"}";
 String SOFTO_MAKERSPACE = "{\"msSlug\":\"zauberstube\",\"status\":\"Soft Open\"}";
@@ -70,126 +46,323 @@ String CLEAR_MAKERSPACE = "{\"msSlug\":\"zauberstube\",\"status\":\"418\"}";
 
 // State machine states
 enum States {
-  BOOT,     // Booting...
-  READY,    // Ready for Input
-  CLOSE,    // Status / Close Wait
-  SOFTOPEN, // Status / Soft Open Wait
-  OPEN,     // Status / Open Wait
-  CLEAR,    // Checkin / Clear Wait
-  ERROR     // Button or Network Error
+  BOOT,         // Booting...
+  READY,        // Ready for Input
+  CLOSE,        // CLOSE button pressed
+  CLOSEWAIT,    // Post-Close wait state
+  SOFTOPEN,     // SOFT OPEN button pressed
+  SOFTOPENWAIT, // Post-Soft Open wait state
+  OPEN,         // OPEN button pressed
+  OPENWAIT,     // Post-Open wait state
+  CLEAR,        // Checkin CLEAR button pressed
+  CLEARWAIT,    // Post-Clear wait state
+  ERROR         // Network Error
 };
 
 // Set initial starting state
-State state = States::BOOT;
+States state = States::BOOT;
+
+// We'll be timining several things, so we need to keep track of time for each
+// Using timers for everything takes a little more memory, but allows us to avoid
+// all blocking code in the loop. (I.e., no delay() calls.)
+unsigned long currentMillis = 0;   // Set to current time in ms frequently throughout the code
+unsigned long wifiStartMillis = 0; // Holds the last time a wifi connection attempt was started
+unsigned long errorStartMillis = 0; // Holds last time error state started
+unsigned long waitStartMillis = 0; // Holds last time a wait state started
+unsigned long lastFlashMillis = 0; // Holds last time the pixel changed state
+const long wifiInterval = 60000;   // We give WiFi about a minute to connect or reconnect
+const long wifiBackoff = 300000;   // If we can't connect, back off for 5 minutes before trying again
+const long waitInterval = 15000;   // Mandatory delay enforced between actions; too many API calls cause mayhem
+const long flashInterval = 500;    // Flash 1/2 interval
+
+bool pixelOn = false;              // Tracks pixel state for timer-based pixel cycling; we will exit setup() with pixel off
 
 void setup() {
   Serial.begin(115200);
-  delay(5000); // Give the serial port a little time to settle.
+  delay(1000); // Give the serial port a little time to settle.
 
   Serial.println("");
   Serial.println("Serial console initialized.");
   
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  pixels.begin(); // Init onboard NeoPixel
+  pixels.clear();
+
+  // Configure button interrupts and handlers
+  pinMode(BUTTON_A, INPUT_PULLUP);
+  pinMode(BUTTON_B, INPUT_PULLUP);
+  pinMode(BUTTON_C, INPUT_PULLUP);
+  pinMode(BUTTON_D, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_A), buttonA, FALLING);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_B), buttonB, FALLING);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_C), buttonC, FALLING);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_D), buttonD, FALLING);
+
+  WiFi.begin(WIFI_SSID, wifiPassword);
   Serial.print("Connecting to WiFi network ");
   Serial.print(WIFI_SSID);
 
+  currentMillis = millis();
+  wifiStartMillis = currentMillis;
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
     delay(500);
   }
   Serial.println("");
 
-  Serial.print("Connected to WiFi network with IP Address: ");
-  Serial.println(WiFi.localIP());
-
-  pixels.begin(); // Init onboard NeoPixel
-
-  // Configure button interrupts
-  pinMode(BUTTON_A, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(BUTTON_A), buttonA, FALLING);
-
   // Set setup exit state
-  State state = States::READY;
+  state = States::READY;
 }
 
+// Four event handles for four buttons to trigger the state associated with
+// each button. Event handler code should be as short as possible.
+// TODO: Remove Serial.println()-s and else clauses for production.
 void buttonA() {
-  Serial.println("Button A pressed.");
-  state = States::CLOSE;
+  if(state == States::READY) {
+    Serial.println("Button A pressed. Setting state to CLOSE.");
+    state = States::CLOSE;
+  } else {
+    Serial.println("Button A pressed but not in READY state. No action.");
+  }
+}
+void buttonB() {
+  if(state == States::READY) {
+    Serial.println("Button B pressed. Setting state to SOFTOPEN.");
+    state = States::SOFTOPEN;
+  } else {
+    Serial.println("Button B pressed but not in READY state. No action.");
+  }
+}
+void buttonC() {
+  if(state == States::READY) {
+    Serial.println("Button C pressed. Setting state to OPEN.");
+    state = States::OPEN;
+  } else {
+    Serial.println("Button C pressed but not in READY state. No action.");
+  }
+}
+void buttonD() {
+  if(state == States::READY) {
+    Serial.println("Button D pressed. Setting state to CLEAR.");
+    state = States::CLEAR;
+  } else {
+    Serial.println("Button D pressed but not in READY state. No action.");
+  }
 }
 
 HTTPClient http;
 int httpCode;
-unsigned long previousMillis = 0;
-const long blockDelay = 300000; // Mandatory pause of 5m between API calls to allow things to settle
-const long flashInterval = 500; // Flash the LED once per second if it is flashing
 
 void loop() {
+  // We grab the current clock time every time through the loop. Delays and flashes
+  // are all calculated to avoid blocking code in the loop.
+  currentMillis = millis();
+
+  // FSM
   switch (state) {
     case States::BOOT:
       // For my OCD, although this state should never happen after setup()
       break;
-
     case States::READY:
-      // Ready for Input
-      pixels.clear();
-      pixels.setPixelColor(0, pixels.Color(0, 128, 0));
+      // Reaady for input, purple steady
+      // pixels.clear();  // Maybe off instead?
+      pixels.setPixelColor(0,pixels.Color(60,0,128));
       pixels.show();
+      pixelOn = true;
       break;
-
     case States::CLOSE:
-      // Status / Close Wait
-      pixels.setPixelColor(0, pixels.Color(192, 0, 0));
-      pixels.show();
-      Serial.println("CLOSE interrupt triggered. State set to CLOSE. Resetting to READY.");
-      delay(interval);
-      state = States::READY;
-      break;
+      waitStartMillis = currentMillis;
+      lastFlashMillis = currentMillis;
+      Serial.println("CLOSE state triggered. Calling CLOSE webhook.");
 
+      // HTTPS call to Airtable webhook
+      http.begin(urlShopStatus);
+      http.addHeader("Content-Type", "application/json");
+      httpCode = http.POST(closeShopJSON);
+      if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+          String payload = http.getString();
+          Serial.println(payload);
+        } else {
+          Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+        }
+      } else {
+        Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      }
+      http.end();
+      // END HTTPS call to Airtable webhook
+
+      Serial.println("Starting Post-Close wait timer.");
+      state = States::CLOSEWAIT; // Switching to Post-CLose wait state
+      break;
+    case States::CLOSEWAIT:
+      // Toggle the LED if the flash interval has passed
+      if(currentMillis - lastFlashMillis >= flashInterval) {
+        if(pixelOn) {
+          pixels.setPixelColor(0, pixels.Color(0,0,0));
+          pixels.show();
+          pixelOn = false;
+        } else {
+          pixels.setPixelColor(0, pixels.Color(192,0,0));
+          pixels.show();
+          pixelOn = true;
+        }
+        lastFlashMillis = currentMillis;
+      }
+      // Exit CLOSEWAIT state if the waitInterval has passed
+      if(currentMillis - waitStartMillis >= waitInterval) {
+        pixels.setPixelColor(0, pixels.Color(0,0,0));
+        pixels.show();
+        pixelOn = false;
+        state = States::READY;
+        Serial.println("Done with CLOSEWAIT state. Switching to READY.");
+      }
+      break;
     case States::SOFTOPEN:
-      // Status / Soft Open Wait
-      break;
+      waitStartMillis = currentMillis;
+      lastFlashMillis = currentMillis;
+      Serial.println("SOFTOPEN state triggered. Calling SOFTOPEN webhook.");
 
+      // HTTPS call to Airtable webhook
+      http.begin(urlShopStatus);
+      http.addHeader("Content-Type", "application/json");
+      httpCode = http.POST(softopenShopJSON);
+      if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+          String payload = http.getString();
+          Serial.println(payload);
+        } else {
+          Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+        }
+      } else {
+        Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      }
+      http.end();
+      // END HTTPS call to Airtable webhook
+
+      Serial.println("Starting Post-Soft Open wait timer.");
+      state = States::SOFTOPENWAIT; // Switching to Post-Soft Open wait state
+      break;
+    case States::SOFTOPENWAIT:
+      // Toggle the LED if the flash interval has passed
+      if(currentMillis - lastFlashMillis >= flashInterval) {
+        if(pixelOn) {
+          pixels.setPixelColor(0, pixels.Color(0,0,0));
+          pixels.show();
+          pixelOn = false;
+        } else {
+          pixels.setPixelColor(0, pixels.Color(192,128,0));
+          pixels.show();
+          pixelOn = true;
+        }
+        lastFlashMillis = currentMillis;
+      }
+      // Exit SOFTOPENWAIT state if the waitInterval has passed
+      if(currentMillis - waitStartMillis >= waitInterval) {
+        pixels.setPixelColor(0, pixels.Color(0,0,0));
+        pixels.show();
+        pixelOn = false;
+        state = States::READY;
+        Serial.println("Done with SOFTOPENWAIT state. Switching to READY.");
+      }
+      break;
     case States::OPEN:
-      // Status / Open Wait
-      break;
+      waitStartMillis = currentMillis;
+      lastFlashMillis = currentMillis;
+      Serial.println("OPEN state triggered. Calling OPEN webhook.");
 
+      // HTTPS call to Airtable webhook
+      http.begin(urlShopStatus);
+      http.addHeader("Content-Type", "application/json");
+      httpCode = http.POST(openShopJSON);
+      if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+          String payload = http.getString();
+          Serial.println(payload);
+        } else {
+          Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+        }
+      } else {
+        Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      }
+      http.end();
+      // END HTTPS call to Airtable webhook
+
+      Serial.println("Starting Post-Open wait timer.");
+      state = States::OPENWAIT; // Switching to Post-Open wait state
+      break;
+    case States::OPENWAIT:
+      // Toggle the LED if the flash interval has passed
+      if(currentMillis - lastFlashMillis >= flashInterval) {
+        if(pixelOn) {
+          pixels.setPixelColor(0, pixels.Color(0,0,0));
+          pixels.show();
+          pixelOn = false;
+        } else {
+          pixels.setPixelColor(0, pixels.Color(0,128,0));
+          pixels.show();
+          pixelOn = true;
+        }
+        lastFlashMillis = currentMillis;
+      }
+      // Exit OPENWAIT state if the waitInterval has passed
+      if(currentMillis - waitStartMillis >= waitInterval) {
+        pixels.setPixelColor(0, pixels.Color(0,0,0));
+        pixels.show();
+        pixelOn = false;
+        state = States::READY;
+        Serial.println("Done with OPENWAIT state. Switching to READY.");
+      }
+      break;
     case States::CLEAR:
-      // Checkin / Clear Wait
-      break;
+      waitStartMillis = currentMillis;
+      lastFlashMillis = currentMillis;
+      Serial.println("CLEAR state triggered. Calling CLEAR webhook.");
 
+      // HTTPS call to Airtable webhook
+      http.begin(urlClearCheckin);
+      http.addHeader("Content-Type", "application/json");
+      httpCode = http.POST(clearCheckinJSON);
+      if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+          String payload = http.getString();
+          Serial.println(payload);
+        } else {
+          Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+        }
+      } else {
+        Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      }
+      http.end();
+      // END HTTPS call to Airtable webhook
+
+      Serial.println("Starting Post-Clear wait timer.");
+      state = States::CLEARWAIT; // Switching to Post-CLear wait state
+      break;
+    case States::CLEARWAIT:
+      // Toggle the LED if the flash interval has passed
+      if(currentMillis - lastFlashMillis >= flashInterval) {
+        if(pixelOn) {
+          pixels.setPixelColor(0, pixels.Color(0,0,0));
+          pixels.show();
+          pixelOn = false;
+        } else {
+          pixels.setPixelColor(0, pixels.Color(0,0,255));
+          pixels.show();
+          pixelOn = true;
+        }
+        lastFlashMillis = currentMillis;
+      }
+      // Exit CLEARWAIT state if the waitInterval has passed
+      if(currentMillis - waitStartMillis >= waitInterval) {
+        pixels.setPixelColor(0, pixels.Color(0,0,0));
+        pixels.show();
+        pixelOn = false;
+        state = States::READY;
+        Serial.println("Done with CLEARWAIT state. Switching to READY.");
+      }
+      break;
     case States::ERROR:
-      // Button or Network Error
+      // WiFi retry code goes here.
       break;
   }
-
-  // unsigned long currentMillis = millis();
-  // if(currentMillis - previousMillis >= interval) {
-  //   previousMillis = currentMillis;
-
-  //   http.begin(urlShopStatus);
-  //   http.addHeader("Content-Type", "application/json");
-
-  //   if(inuse) {
-  //     Serial.println("Calling Airtable web hook with status IN USE.");
-      // httpCode = http.POST(TEST_INUSE);
-  //     inuse = false;
-  //   } else {
-  //     Serial.println("Calling Airtable web hook with status NOT IN USE.");
-  //     // httpCode = http.POST(TEST_NOTINUSE);
-  //     inuse = true;
-  //   }
-
-    // httpCode will be negative on error
-    // if (httpCode > 0) {
-    //   if (httpCode == HTTP_CODE_OK) {
-    //     String payload = http.getString();
-    //     Serial.println(payload);
-    //   } else {
-    //     Serial.printf("[HTTP] POST... code: %d\n", httpCode);
-    //   }
-    // } else {
-    //   Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
-    // }
-    // http.end();
-  // }
 }
