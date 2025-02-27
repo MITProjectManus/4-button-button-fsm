@@ -34,3 +34,25 @@ The code tracks aeveral states and transitions between them based on button inte
 | ERROR WAIT     | WiFi lost try to reconnect and escalating back off if unsuccessful            |
 
 Why separate wait states rather than just one? The light flashes in the action color during wait based on what button was pushed and what action was performed. Could set color on button push but we may want to do different things for different actions. For example, setting status is not actually expensive, clearing checkin is. We may only want a long timeout for that one.
+
+## Include file for location specific info
+
+This code relies on an include file, `4-button-button.h` which is not tracked in the repo. It contains definitions for variables, web hooks, and payloads that are specific to one or more locations and should not be publicly shared.
+(Specifically the web hooks which can be called without authentication and will need to be changed if they become public as they can be abused.) An example `4-button-button.h` file with sensitive info blanked out is included below:
+
+```C
+#ifndef FOUR_BUTTON_BUTTON_H
+#define FOUR_BUTTON_BUTTON_H
+
+const char* urlShopStatus    = "Full_URL_to_Airtable_Set_Status_Web_Hook";
+const char* closeShopJSON    = "{\"id\":\"Record_Id_for_Shop\",\"status\":\"Closed\"}";
+const char* softopenShopJSON = "{\"id\":\"Record_Id_for_Shop\",\"status\":\"Soft Open\"}";
+const char* openShopJSON     = "{\"id\":\"Record_Id_for_Shop\",\"status\":\"Open\"}";
+
+const char* urlClearCheckin  = "Full_URL_to_Airtable_Clear_Checkin_Web_Hook";
+const char* clearCheckinJSON = "{\"id\":\"Record_Id_for_Shop\",\"reason\":\"418\"}";
+
+const char* wifiPassword = "WiFi_PSK";
+
+#endif // FOUR_BUTTON_BUTTON_H
+```
