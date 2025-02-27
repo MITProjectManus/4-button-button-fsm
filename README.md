@@ -18,13 +18,19 @@ This is a short example program which runs on an Adafruit Feather ESP32-S2 and c
 
 ## FSM
 
-The code tracks 6 status and transitions between them. They are:
+The code tracks aeveral states and transitions between them based on button interrupts and timers.
 
-| Status         | Description
-|================|=================================================================|
+| State | Description |
+| --- | --- |
 | READY          | Waiting for button to perform action                            |
+| CLOSE | Close button pushed, call web hook and transit to CLOSE WAIT |
 | CLOSE WAIT     | 5 minute lockout timer running after CLOSE action performed     |
+| SOFT OPEN      | Soft Open button pushed, call web hook and transit to SOFT OPEN WAIT |
 | SOFT OPEN WAIT | 5 minute lockout timer running after SOFT OPEN action performed |
+| OPEN           | Open button pushed, call web hook and transit to OPEN WAIT |
 | OPEN WAIT      | 5 minute lockout timer running after OPEN action performer      |
+| CLEAR          | Clear button pushed, call web hook and transit to CLEAR WAIT |
 | CLEAR WAIT     | 5 minute lockout timer running after CLEAR action performed     |
-| ERROR WAIT     | 5 minute wait timer running after ERROR encountered             |
+| ERROR WAIT     | WiFi lost try to reconnect and escalating back off if unsuccessful            |
+
+Why separate wait states rather than just one? The light flashes in the action color during wait based on what button was pushed and what action was performed. Could set color on button push but we may want to do different things for different actions. For example, setting status is not actually expensive, clearing checkin is. We may only want a long timeout for that one.
