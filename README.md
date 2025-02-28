@@ -38,7 +38,7 @@ Why separate wait states rather than just one? The light flashes in the action c
 ## Include file for location specific info
 
 This code relies on an include file, `4-button-button.h` which is not tracked in the repo. It contains definitions for variables, web hooks, and payloads that are specific to one or more locations and should not be publicly shared.
-(Specifically the web hooks which can be called without authentication and will need to be changed if they become public as they can be abused.) An example `4-button-button.h` file with sensitive info blanked out is included below:
+(Specifically the web hooks which can be called without authentication and will need to be changed if they become public as they can be abused.) An example `4-button-button.h` file with sensitive info blanked out is included below and as `4-button-button-sample.h`:
 
 ```C
 #ifndef FOUR_BUTTON_BUTTON_H
