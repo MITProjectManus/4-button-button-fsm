@@ -37,8 +37,6 @@ Adafruit_NeoPixel pixels(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 #define BUTTON_C   6 // GREEN / OPEN
 #define BUTTON_D   5 // BLUE / CLEAR
 
-const char WIFI_SSID[]     = "MIT";
-
 // State machine states
 enum States {
   BOOT,         // Booting...
@@ -65,10 +63,10 @@ unsigned long wifiStartMillis = 0; // Holds the last time a wifi connection atte
 unsigned long errorStartMillis = 0; // Holds last time error state started
 unsigned long waitStartMillis = 0; // Holds last time a wait state started
 unsigned long lastFlashMillis = 0; // Holds last time the pixel changed state
-const long wifiInterval = 60000;   // We give WiFi about a minute to connect or reconnect
-const long wifiBackoff = 300000;   // If we can't connect, back off for 5 minutes before trying again
-const long waitInterval = 15000;   // Mandatory delay enforced between actions; too many API calls cause mayhem
-const long flashInterval = 500;    // Flash 1/2 interval
+const long wifiInterval =  60000;  // We give WiFi about a minute to connect or reconnect
+const long wifiBackoff  = 300000;  // If we can't connect, back off for 5 minutes before trying again
+const long waitInterval = 300000;  // Long-ish 5m delay enforced between actions; too many API calls cause mayhem
+const long flashInterval =   500;  // Flash 1/2 interval
 
 bool pixelOn = false;              // Tracks pixel state for timer-based pixel cycling; we will exit setup() with pixel off
 
@@ -92,20 +90,38 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(BUTTON_C), buttonC, FALLING);
   attachInterrupt(digitalPinToInterrupt(BUTTON_D), buttonD, FALLING);
 
-  WiFi.begin(WIFI_SSID, wifiPassword);
-  Serial.print("Connecting to WiFi network ");
-  Serial.print(WIFI_SSID);
+  WiFi.begin(wifiSSID, wifiPassword);
+  Serial.printf("Connecting to WiFi network %s...", wifiSSID);
 
-  currentMillis = millis();
-  wifiStartMillis = currentMillis;
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(500);
+  // Try to connect to WiFi and timeout if not successful after wifiInterval (conditional math works out even for the first time through)
+  while (WiFi.status() != WL_CONNECTED || currentMillis - wifiStartMillis >= wifiInterval) {
+    currentMillis = millis();
+    if(currentMillis - lastFlashMillis >= flashInterval) {
+      if(pixelOn) {
+        pixels.setPixelColor(0, pixels.Color(192,128,0));
+        pixels.show();
+        pixelOn = false;
+        Serial.print(".");
+      } else {
+        pixels.setPixelColor(0, pixels.Color(192,0,0));
+        pixels.show();
+        pixelOn = true;
+        Serial.print(".");
+      }
+      lastFlashMillis = currentMillis;
+    }
   }
-  Serial.println("");
 
-  // Set setup exit state
-  state = States::READY;
+  // Check if connection succeeded or timed out
+  if(WiFi.status() != WL_CONNECTED) {
+    Serial.println("FAILED.");
+    Serial.println("Proceeding to main loop with state ERROR.");
+    state = States::ERROR;
+  } else {
+    Serial.println("CONNECTED.");
+    Serial.println("Proceeding to main loop with state READY.");
+    state = States::READY;
+  }
 }
 
 // Four event handles for four buttons to trigger the state associated with
