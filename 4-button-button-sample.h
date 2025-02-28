@@ -1,7 +1,7 @@
 #ifndef FOUR_BUTTON_BUTTON_H
 #define FOUR_BUTTON_BUTTON_H
 
-const char* urlShopStatus    = "REPLACE_WITH_URL_TO_STATUS_WEBHOOK";
+const char* urlShopStatus    = "REPLACE_WITH_URL_TO_SET_STATUS_WEBHOOK";
 const char* closeShopJSON    = "{\"id\":\"REPLACE_WITH_MAKERSPACE_RECORD_ID\",\"status\":\"Closed\"}";
 const char* softopenShopJSON = "{\"id\":\"REPLACE_WITH_MAKERSPACE_RECORD_ID\",\"status\":\"Soft Open\"}";
 const char* openShopJSON     = "{\"id\":\"REPLACE_WITH_MAKERSPACE_RECORD_ID\",\"status\":\"Open\"}";
