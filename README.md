@@ -7,14 +7,14 @@ This is a short example program which runs on an Adafruit Feather ESP32-S2 and c
 ## Usage
 
 - Four buttons (Red, Yellow, Green, Blue) perform four functions:
--- RED: Request to set the makerspace status to "Closed"
--- YELLOW: Request to set the makerspace status to "Soft Open"
--- GREEN: Request to set the makerspace status to "Open"
--- BLUE: Request to clear the list of checked in users at makerspace, but checking them all out
+    - RED: Request to set the makerspace status to "Closed"
+    - YELLOW: Request to set the makerspace status to "Soft Open"
+    - GREEN: Request to set the makerspace status to "Open"
+    - BLUE: Request to clear the list of checked in users at makerspace, but checking them all out
 - Status LED
--- OFF: Indicates ready status; push a button to do something
--- FLASHING: Indicates waiting status; button has been pushed, and you can't to anything else for the next 5 minutes
--- SOLID RED: Indicates error status; network is down or someone's mashing multiple buttons; will re-check in 5 minutes
+    - OFF: Indicates ready status; push a button to do something
+    - FLASHING: Indicates waiting status; button has been pushed, and you can't to anything else for the next 5 minutes
+    - SOLID RED: Indicates error status; network is down or someone's mashing multiple buttons; will re-check in 5 minutes
 
 ## FSM
 
