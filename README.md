@@ -31,7 +31,7 @@ The code tracks aeveral states and transitions between them based on button inte
 | OPEN WAIT      | 5 minute lockout timer running after OPEN action performer      |
 | CLEAR          | Clear button pushed, call web hook and transit to CLEAR WAIT |
 | CLEAR WAIT     | 5 minute lockout timer running after CLEAR action performed     |
-| ERROR WAIT     | WiFi lost try to reconnect and escalating back off if unsuccessful            |
+| ERROR          | No WiFi; pause for 5m and try to reconnect for 20s; rinse and repeat |
 
 Why separate wait states rather than just one? The light flashes in the action color during wait based on what button was pushed and what action was performed. Could set color on button push but we may want to do different things for different actions. For example, setting status is not actually expensive, clearing checkin is. We may only want a long timeout for that one.
 
