@@ -9,7 +9,7 @@ const char* openShopJSON     = "{\"id\":\"REPLACE_WITH_MAKERSPACE_RECORD_ID\",\"
 const char* urlClearCheckin  = "REPLACE_WITH_URL_TO_CLEAR_CHECKINS_WEBHOOK";
 const char* clearCheckinJSON = "{\"id\":\"REPLACE_WITH_MAKERSPACE_RECORD_ID\",\"reason\":\"418\"}";
 
-const char* wifiSSID = "REPLACE_WITH_WIFI_SSID";
+const char* wifiSSID     = "REPLACE_WITH_WIFI_SSID";
 const char* wifiPassword = "REPLACE_WITH_WIFI_PASSWORD";
 
 #endif // FOUR_BUTTON_BUTTON_H
